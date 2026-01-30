@@ -31,6 +31,63 @@ from typing import Optional
 mimetypes.init()
 
 
+def _read_ignore_list(path: Path) -> set[str]:
+    """Read a simple ignore file (one token per line).
+
+    - blank lines ignored
+    - lines starting with # ignored
+    - tokens matched case-insensitively
+    """
+    try:
+        if not path.exists() or not path.is_file():
+            return set()
+        out: set[str] = set()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            s = (line or "").strip()
+            if not s or s.startswith("#"):
+                continue
+            out.add(s.lower())
+        return out
+    except Exception:
+        return set()
+
+
+def _banker_ignore_tokens(root_dir: Path, dir_path: Path, url_path: str) -> set[str]:
+    """Return ignore tokens for banker directory listings.
+
+    Looks for `.bankerignore` files:
+    - at the banker root (intranet/<banker symlink>/..)
+    - in any parent directory between the current listing and banker root
+
+    This allows both global ignores (~/banker/.bankerignore) and per-bank ignores
+    (~/banker/banks/<bank>/.bankerignore).
+    """
+    if not (url_path or "").startswith("/banker/"):
+        return set()
+
+    try:
+        banker_root = (root_dir / "banker").resolve()
+        cur = dir_path.resolve()
+    except Exception:
+        return set()
+
+    if not banker_root.exists() or not banker_root.is_dir():
+        return set()
+
+    tokens: set[str] = set()
+
+    # Only walk parents if we're actually inside the banker tree.
+    if cur == banker_root or banker_root in cur.parents:
+        p = cur
+        while True:
+            tokens |= _read_ignore_list(p / ".bankerignore")
+            if p == banker_root:
+                break
+            p = p.parent
+
+    return tokens
+
+
 def _h(s: any) -> str:
     """HTML escape helper."""
     return html.escape("" if s is None else str(s), quote=True)
@@ -237,10 +294,16 @@ class IntranetHandler(BaseHTTPRequestHandler):
                     "icon": "📁",
                 })
 
+            ignore_tokens = _banker_ignore_tokens(self.server.root_dir, dir_path, url_path)
+
             # List directory contents
             for entry in sorted(dir_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
                 # Skip hidden files
                 if entry.name.startswith("."):
+                    continue
+
+                # Banker-specific ignore support
+                if ignore_tokens and entry.name.lower() in ignore_tokens:
                     continue
 
                 is_dir = entry.is_dir()
