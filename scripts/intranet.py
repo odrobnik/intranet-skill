@@ -10,9 +10,22 @@ from pathlib import Path
 from typing import Any
 
 
+def _find_workspace_root() -> Path:
+    """Walk up from script location to find workspace root (parent of 'skills/')."""
+    env = os.environ.get("INTRANET_WORKSPACE")
+    if env:
+        return Path(env)
+    d = Path(__file__).resolve().parent
+    for _ in range(6):
+        if (d / "skills").is_dir() and d != d.parent:
+            return d
+        d = d.parent
+    return Path.cwd()
+
+
 def _default_root_dir() -> Path:
     """Default intranet root directory."""
-    return Path.home() / "clawd" / "intranet"
+    return _find_workspace_root() / "intranet"
 
 
 def _root_dir(dir_value: str | None) -> Path:
@@ -223,7 +236,7 @@ def main() -> int:
     start = sub.add_parser("start", help="Start the intranet server")
     start.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     start.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
-    start.add_argument("--dir", default=None, help="Root directory to serve (default: ~/clawd/intranet)")
+    start.add_argument("--dir", default=None, help="Root directory to serve (default: workspace/intranet)")
     start.set_defaults(func=cmd_start)
 
     # Status command

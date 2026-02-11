@@ -27,6 +27,19 @@ from socketserver import ThreadingMixIn
 from typing import Optional
 
 
+def _find_workspace_root() -> Path:
+    """Walk up from script location to find workspace root (parent of 'skills/')."""
+    env = os.environ.get("INTRANET_WORKSPACE")
+    if env:
+        return Path(env)
+    d = Path(__file__).resolve().parent
+    for _ in range(6):
+        if (d / "skills").is_dir() and d != d.parent:
+            return d
+        d = d.parent
+    return Path.cwd()
+
+
 # Initialize mimetypes
 mimetypes.init()
 
@@ -223,13 +236,6 @@ class IntranetHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path_only = urllib.parse.unquote(parsed.path)
 
-        # Check if any parent directory has an index.py that should handle this request
-        # This allows CGI apps to handle all sub-paths (e.g., /banker/george/ -> banker's index.py)
-        cgi_handler = self._find_cgi_handler(path_only)
-        if cgi_handler:
-            self._execute_python(cgi_handler, path_only)
-            return
-
         # Resolve the file system path
         fs_path = _safe_resolve(self.server.root_dir, path_only)
 
@@ -237,42 +243,54 @@ class IntranetHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.FORBIDDEN, "Forbidden")
             return
 
-        if not fs_path.exists():
-            self._send_error(HTTPStatus.NOT_FOUND, "Not Found")
-            return
+        # First priority: exact path exists
+        if fs_path.exists():
+            # Handle directories
+            if fs_path.is_dir():
+                # Redirect if path doesn't end with /
+                if not path_only.endswith("/"):
+                    self.send_response(HTTPStatus.MOVED_PERMANENTLY)
+                    self.send_header("Location", path_only + "/")
+                    self.end_headers()
+                    return
 
-        # Handle directories
-        if fs_path.is_dir():
-            # Redirect if path doesn't end with /
-            if not path_only.endswith("/"):
-                self.send_response(HTTPStatus.MOVED_PERMANENTLY)
-                self.send_header("Location", path_only + "/")
-                self.end_headers()
+                # Try to serve index.py (CGI) or index.html
+                index_py = fs_path / "index.py"
+                if index_py.exists() and index_py.is_file():
+                    self._execute_python(index_py, path_only)
+                    return
+
+                index_html = fs_path / "index.html"
+                if index_html.exists() and index_html.is_file():
+                    self._serve_file(index_html)
+                    return
+
+                # Otherwise show directory listing
+                self._serve_directory(fs_path, path_only)
                 return
 
-            # Try to serve index.py (CGI) or index.html
-            index_py = fs_path / "index.py"
-            if index_py.exists() and index_py.is_file():
-                self._execute_python(index_py, path_only)
+            # Handle .py files as CGI
+            if fs_path.is_file() and fs_path.suffix == ".py":
+                self._execute_python(fs_path, path_only)
                 return
 
-            index_html = fs_path / "index.html"
-            if index_html.exists() and index_html.is_file():
-                self._serve_file(index_html)
+            # Handle other files
+            if fs_path.is_file():
+                self._serve_file(fs_path)
                 return
 
-            # Otherwise show directory listing
-            self._serve_directory(fs_path, path_only)
-            return
+        # Second priority: try adding .py extension
+        if not path_only.endswith('.py'):
+            py_path = _safe_resolve(self.server.root_dir, path_only + '.py')
+            if py_path and py_path.exists() and py_path.is_file():
+                self._execute_python(py_path, path_only)
+                return
 
-        # Handle .py files as CGI
-        if fs_path.is_file() and fs_path.suffix == ".py":
-            self._execute_python(fs_path, path_only)
-            return
-
-        # Handle files
-        if fs_path.is_file():
-            self._serve_file(fs_path)
+        # Third priority: check if any parent directory has an index.py that should handle this request
+        # This allows CGI apps to handle all sub-paths (e.g., /banker/george/ -> banker's index.py)
+        cgi_handler = self._find_cgi_handler(path_only)
+        if cgi_handler:
+            self._execute_python(cgi_handler, path_only)
             return
 
         self._send_error(HTTPStatus.NOT_FOUND, "Not Found")
@@ -609,7 +627,7 @@ class IntranetHandler(BaseHTTPRequestHandler):
 def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None):
     """Start the intranet web server."""
     if root_dir is None:
-        root_dir = Path.home() / "clawd" / "intranet"
+        root_dir = _find_workspace_root() / "intranet"
 
     root_dir = Path(root_dir).expanduser().resolve()
 
@@ -635,7 +653,7 @@ def main() -> int:
     ap.add_argument("--dir", default=None, help="Root directory to serve")
     args = ap.parse_args()
 
-    root_dir = Path(args.dir) if args.dir else (Path.home() / "clawd" / "intranet")
+    root_dir = Path(args.dir) if args.dir else (_find_workspace_root() / "intranet")
 
     print(f"[intranet-web] Serving {root_dir} on http://{args.host}:{args.port}/")
     run_server(args.host, args.port, root_dir)
