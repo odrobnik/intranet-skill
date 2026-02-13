@@ -358,6 +358,12 @@ class IntranetHandler(BaseHTTPRequestHandler):
                 if cgi_enabled:
                     index_py = fs_path / "index.py"
                     if index_py.is_file() and index_py.name == "index.py":
+                        # Containment: resolved script must stay within base dir
+                        resolved_cgi = index_py.resolve()
+                        base_res = base_dir.resolve()
+                        if base_res not in resolved_cgi.parents:
+                            self._send_error(HTTPStatus.FORBIDDEN, "CGI script escapes base directory")
+                            return
                         self._execute_cgi(index_py, url_path)
                         return
 
