@@ -14,7 +14,8 @@ Apache and nginx require sudo, complex configuration, and are overkill for servi
 - **Security** — path traversal protection, workspace-scoped CGI execution, executable permission required
 - **Directory listing** with clean HTML interface
 - **PID management** — start/stop/status with process tracking
-- **ngrok compatible** — tunnel for remote access outside your LAN
+- **Bearer token auth** — optional authentication for remote/public access
+- **Tunnel-friendly** — works behind any HTTP tunnel or reverse proxy
 
 ## Requirements
 

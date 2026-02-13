@@ -15,16 +15,24 @@ Security note:
 - Path traversal protection included
 """
 
+import hashlib
+import hmac
 import html
+import http.cookies
 import mimetypes
 import os
 import posixpath
+import secrets
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Optional
+
+# Session cookie name and max age (30 days)
+_COOKIE_NAME = "intranet_session"
+_COOKIE_MAX_AGE = 30 * 24 * 3600
 
 
 def _find_workspace_root() -> Path:
@@ -123,11 +131,31 @@ def _bytes_format(n: int) -> str:
     return f"{n} B"
 
 
-def _is_within_workspace(path: Path) -> bool:
-    """Check if a resolved path is within the workspace or /tmp."""
-    resolved = path.resolve()
+def _allowed_roots() -> list[Path]:
+    """Return the list of allowed root directories for symlink targets and CGI scripts."""
     workspace = _find_workspace_root().resolve()
-    allowed = [workspace, Path("/tmp").resolve()]
+    roots = [workspace, Path("/tmp").resolve()]
+
+    # Load extra allowed paths from config.json
+    config_file = workspace / "intranet" / "config.json"
+    if config_file.exists():
+        try:
+            import json
+            cfg = json.loads(config_file.read_text())
+            for p in cfg.get("allowed_paths", []):
+                expanded = Path(p).expanduser().resolve()
+                if expanded not in roots:
+                    roots.append(expanded)
+        except Exception:
+            pass
+
+    return roots
+
+
+def _is_within_workspace(path: Path) -> bool:
+    """Check if a resolved path is within an allowed root directory."""
+    resolved = path.resolve()
+    allowed = _allowed_roots()
     return any(resolved == a or a in resolved.parents for a in allowed)
 
 
@@ -249,8 +277,122 @@ class IntranetHandler(BaseHTTPRequestHandler):
 
         return None
 
+    def _check_host(self) -> bool:
+        """Check if the request's Host header is in the allowed hosts list.
+
+        Returns True if allowed, False if denied (response already sent).
+        When no allowed_hosts are configured, all hosts are accepted.
+        """
+        allowed = getattr(self.server, "allowed_hosts", None)
+        if not allowed:
+            return True
+
+        host = (self.headers.get("Host") or "").lower().split(":")[0]
+        if host in allowed:
+            return True
+
+        self.send_response(HTTPStatus.FORBIDDEN)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        body = b"403 Forbidden\n"
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return False
+
+    def _make_session_mac(self, token: str) -> str:
+        """Create an HMAC session value from the token + server secret."""
+        secret = getattr(self.server, "session_secret", b"")
+        return hmac.new(secret, token.encode(), hashlib.sha256).hexdigest()
+
+    def _get_cookie(self, name: str) -> str | None:
+        """Extract a cookie value from the request."""
+        cookie_header = self.headers.get("Cookie", "")
+        if not cookie_header:
+            return None
+        try:
+            cookies = http.cookies.SimpleCookie(cookie_header)
+            morsel = cookies.get(name)
+            return morsel.value if morsel else None
+        except Exception:
+            return None
+
+    def _set_session_cookie(self, mac: str) -> str:
+        """Build a Set-Cookie header value."""
+        c = http.cookies.SimpleCookie()
+        c[_COOKIE_NAME] = mac
+        c[_COOKIE_NAME]["httponly"] = True
+        c[_COOKIE_NAME]["samesite"] = "Strict"
+        c[_COOKIE_NAME]["max-age"] = str(_COOKIE_MAX_AGE)
+        c[_COOKIE_NAME]["path"] = "/"
+        # Extract just the header value (SimpleCookie outputs "Set-Cookie: name=val")
+        return c[_COOKIE_NAME].OutputString()
+
+    def _check_auth(self) -> bool:
+        """Check authentication if a token is configured.
+
+        Auth flow:
+        1. No token configured → allow all (LAN use).
+        2. Valid session cookie → allow.
+        3. Valid Authorization: Bearer header → allow (API clients).
+        4. Valid ?token= query param → set session cookie, redirect to
+           strip the token from the URL (browser use).
+        5. Otherwise → 401.
+
+        Returns True if the request should proceed, False if a response
+        was already sent (redirect or 401).
+        """
+        required_token = getattr(self.server, "auth_token", None)
+        if not required_token:
+            return True
+
+        expected_mac = self._make_session_mac(required_token)
+
+        # 1. Check session cookie
+        cookie_val = self._get_cookie(_COOKIE_NAME)
+        if cookie_val and hmac.compare_digest(cookie_val, expected_mac):
+            return True
+
+        # 2. Check Authorization header (for API / curl clients)
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer ") and hmac.compare_digest(auth_header[7:], required_token):
+            return True
+
+        # 3. Check ?token= query param → set cookie + redirect
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        token_values = params.get("token", [])
+        if token_values and hmac.compare_digest(token_values[0], required_token):
+            # Build redirect URL without the token param
+            remaining = {k: v for k, v in params.items() if k != "token"}
+            clean_query = urllib.parse.urlencode(remaining, doseq=True)
+            clean_path = parsed.path
+            if clean_query:
+                clean_path += "?" + clean_query
+
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", clean_path)
+            self.send_header("Set-Cookie", self._set_session_cookie(expected_mac))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+
+        # 4. Denied
+        self.send_response(HTTPStatus.UNAUTHORIZED)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("WWW-Authenticate", "Bearer")
+        body = b"401 Unauthorized\n"
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return False
+
     def do_GET(self):
         """Handle GET requests."""
+        if not self._check_host():
+            return
+        if not self._check_auth():
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path_only = urllib.parse.unquote(parsed.path)
 
@@ -481,6 +623,12 @@ class IntranetHandler(BaseHTTPRequestHandler):
 
         # Build CGI environment
         env = os.environ.copy()
+
+        # Inject custom env vars from config.json
+        cgi_env = getattr(self.server, "cgi_env", {})
+        if cgi_env:
+            env.update(cgi_env)
+
         env.update({
             "REQUEST_METHOD": "GET",
             "SCRIPT_NAME": url_path,
@@ -655,7 +803,7 @@ class IntranetHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None):
+def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None, token: str = None):
     """Start the intranet web server."""
     if root_dir is None:
         root_dir = _find_workspace_root() / "intranet"
@@ -667,6 +815,25 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None):
 
     httpd = ThreadingHTTPServer((host, port), IntranetHandler)
     httpd.root_dir = root_dir
+    httpd.auth_token = token
+    httpd.session_secret = secrets.token_bytes(32)
+
+    # Load settings from config.json
+    import json as _json
+    config_file = root_dir / "config.json"
+    cgi_env = {}
+    allowed_hosts = None
+    if config_file.exists():
+        try:
+            cfg = _json.loads(config_file.read_text())
+            cgi_env = cfg.get("env", {})
+            hosts_list = cfg.get("allowed_hosts", [])
+            if hosts_list:
+                allowed_hosts = {h.lower() for h in hosts_list}
+        except Exception:
+            pass
+    httpd.cgi_env = cgi_env
+    httpd.allowed_hosts = allowed_hosts
 
     try:
         httpd.serve_forever()
@@ -682,12 +849,16 @@ def main() -> int:
     ap.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     ap.add_argument("--port", type=int, default=8080, help="Port to bind to")
     ap.add_argument("--dir", default=None, help="Root directory to serve")
+    ap.add_argument("--token", default=None, help="Bearer token for authentication")
     args = ap.parse_args()
 
     root_dir = Path(args.dir) if args.dir else (_find_workspace_root() / "intranet")
+    token = args.token or os.environ.get("INTRANET_TOKEN")
 
     print(f"[intranet-web] Serving {root_dir} on http://{args.host}:{args.port}/")
-    run_server(args.host, args.port, root_dir)
+    if token:
+        print("[intranet-web] Token authentication enabled")
+    run_server(args.host, args.port, root_dir, token=token)
     return 0
 
 

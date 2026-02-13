@@ -78,6 +78,22 @@ def _clear_pid() -> None:
         pass
 
 
+def _persistent_config_file() -> Path:
+    """Persistent config file (workspace/intranet/config.json)."""
+    return _default_root_dir() / "config.json"
+
+
+def _load_persistent_config() -> dict[str, Any]:
+    """Load persistent config from workspace/intranet/config.json."""
+    cf = _persistent_config_file()
+    if not cf.exists():
+        return {}
+    try:
+        return json.loads(cf.read_text())
+    except (ValueError, OSError):
+        return {}
+
+
 def _read_config() -> dict[str, Any]:
     """Read server configuration."""
     config_file = _config_file()
@@ -141,8 +157,12 @@ def cmd_start(args) -> int:
         root_dir.mkdir(parents=True, exist_ok=True)
         print(f"[intranet] Created root directory: {root_dir}")
 
+    # Load persistent config (workspace/intranet/config.json)
+    persistent_config = _load_persistent_config()
+
     host = args.host
     port = args.port
+    token = args.token or os.environ.get("INTRANET_TOKEN") or persistent_config.get("token") or None
 
     # Save configuration
     config = {
@@ -150,6 +170,8 @@ def cmd_start(args) -> int:
         "port": port,
         "root_dir": str(root_dir),
     }
+    if token:
+        config["token"] = token
     _write_config(config)
 
     # Fork to background
@@ -160,6 +182,8 @@ def cmd_start(args) -> int:
         print(f"[intranet] Server started (PID {pid})")
         print(f"[intranet] Serving {root_dir}")
         print(f"[intranet] Access at {_get_display_url(host, port)}")
+        if token:
+            print("[intranet] Auth: token enabled")
         return 0
 
     # Child process - start the server
@@ -181,7 +205,7 @@ def cmd_start(args) -> int:
         spec.loader.exec_module(mod)
         run_server = getattr(mod, "run_server")
 
-    run_server(host=host, port=port, root_dir=root_dir)
+    run_server(host=host, port=port, root_dir=root_dir, token=token)
     return 0
 
 
@@ -197,9 +221,11 @@ def cmd_status(args) -> int:
         host = config.get("host", "0.0.0.0")
         port = config.get("port", 8080)
         root_dir = config.get("root_dir", str(_default_root_dir()))
+        has_token = bool(config.get("token"))
         print(f"[intranet] Server is running (PID {pid})")
         print(f"[intranet] Serving {root_dir}")
         print(f"[intranet] Access at {_get_display_url(host, port)}")
+        print(f"[intranet] Auth: {'token enabled' if has_token else 'none (open)'}")
         return 0
     else:
         print(f"[intranet] Server not running (stale PID {pid})")
@@ -243,6 +269,7 @@ def main() -> int:
     start.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     start.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
     start.add_argument("--dir", default=None, help="Root directory to serve (default: workspace/intranet)")
+    start.add_argument("--token", default=None, help="Bearer token for authentication (or INTRANET_TOKEN env var)")
     start.set_defaults(func=cmd_start)
 
     # Status command
