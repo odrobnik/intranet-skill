@@ -36,13 +36,13 @@ def _root_dir() -> Path:
 
 
 def _pid_file() -> Path:
-    """PID file location."""
-    return Path.home() / ".intranet.pid"
+    """PID file location (workspace/intranet/.pid)."""
+    return _default_root_dir() / ".pid"
 
 
 def _config_file() -> Path:
-    """Config file location."""
-    return Path.home() / ".intranet.conf"
+    """Runtime config file (workspace/intranet/.conf)."""
+    return _default_root_dir() / ".conf"
 
 
 def _read_pid() -> int | None:

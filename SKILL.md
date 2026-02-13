@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 3.0.0
+version: 3.0.1
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -83,7 +83,7 @@ When enabled, only files named `index.py` can execute as CGI:
 
 - **Webroot isolation** — config.json is outside the webroot (`www/`), never served
 - **CGI off by default** — must be explicitly enabled via `"cgi": true` in config.json
-- **Symlinks skipped** in directory listings; all resolved paths checked for strict containment within webroot/plugins
+- **Symlinks skipped** in directory listings (not shown). Path resolution uses `resolve()` which follows symlinks, then enforces strict containment — a symlink pointing outside webroot/workspace is blocked.
 - **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
 - **CGI restricted to `index.py`** — no arbitrary script execution
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)
@@ -93,8 +93,10 @@ When enabled, only files named `index.py` can execute as CGI:
 - **Default bind: `127.0.0.1`** (loopback only). LAN access via `--host 0.0.0.0` requires both token auth and `allowed_hosts` in config.json.
 
 ## Notes
-- PID file: `~/.intranet.pid`
-- Config file: `~/.intranet.conf`
-- Config dir: `{workspace}/intranet/` (auto-detected)
-- Webroot: `{workspace}/intranet/www/`
+- All state files are inside the workspace:
+  - Config: `{workspace}/intranet/config.json`
+  - PID: `{workspace}/intranet/.pid`
+  - Runtime: `{workspace}/intranet/.conf`
+  - Webroot: `{workspace}/intranet/www/`
+- No files are written outside the workspace
 - 30-second timeout on CGI execution (when enabled)

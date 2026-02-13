@@ -21,8 +21,8 @@ Always `{workspace}/intranet/` (auto-detected from CWD or script location, not c
 
 ### State Files
 
-- `~/.intranet.pid` — PID of running server
-- `~/.intranet.conf` — Runtime config (host, port, directory)
+- `{workspace}/intranet/.pid` — PID of running server
+- `{workspace}/intranet/.conf` — Runtime config (host, port)
 
 Created automatically on start, cleaned up on stop.
 

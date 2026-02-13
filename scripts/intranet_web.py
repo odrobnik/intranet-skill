@@ -16,7 +16,7 @@ Security model:
 - All other .py files return 403 Forbidden
 - Plugins are explicitly registered in config.json (no auto-discovery)
 - Path traversal protection on all requests
-- Symlinks are not followed; resolved paths must stay within their root
+- Symlinks are skipped in listings; resolve() follows them but enforces containment
 """
 
 import hashlib
