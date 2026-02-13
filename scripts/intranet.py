@@ -137,7 +137,7 @@ def cmd_start(args) -> int:
     if pid and _is_process_running(pid):
         print(f"[intranet] Server already running (PID {pid})")
         config = _read_config()
-        host = config.get("host", "0.0.0.0")
+        host = config.get("host", "127.0.0.1")
         port = config.get("port", 8080)
         print(f"[intranet] Access at {_get_display_url(host, port)}")
         return 0
@@ -154,6 +154,19 @@ def cmd_start(args) -> int:
     host = args.host
     port = args.port
     token = args.token or os.environ.get("INTRANET_TOKEN") or persistent_config.get("token") or None
+    allowed_hosts = persistent_config.get("allowed_hosts", [])
+
+    # Non-loopback binding requires auth + allowed_hosts
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        missing = []
+        if not token:
+            missing.append("token auth (--token or INTRANET_TOKEN)")
+        if not allowed_hosts:
+            missing.append("allowed_hosts in config.json")
+        if missing:
+            print(f"[intranet] ERROR: Binding to {host} requires: {' and '.join(missing)}")
+            print("[intranet] Use --host localhost for local-only access, or configure auth + allowed_hosts first.")
+            return 1
 
     # Save configuration
     config = {
@@ -208,7 +221,7 @@ def cmd_status(args) -> int:
 
     if _is_process_running(pid):
         config = _read_config()
-        host = config.get("host", "0.0.0.0")
+        host = config.get("host", "127.0.0.1")
         port = config.get("port", 8080)
         root_dir = config.get("root_dir", str(_default_root_dir()))
         has_token = bool(config.get("token"))
@@ -256,7 +269,7 @@ def main() -> int:
 
     # Start command
     start = sub.add_parser("start", help="Start the intranet server")
-    start.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    start.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1; 0.0.0.0 requires token + allowed_hosts)")
     start.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
     start.add_argument("--token", default=None, help="Bearer token for authentication (or INTRANET_TOKEN env var)")
     start.set_defaults(func=cmd_start)

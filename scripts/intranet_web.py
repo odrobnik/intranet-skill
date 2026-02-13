@@ -666,7 +666,7 @@ def _load_config(root_dir: Path) -> dict:
         return {}
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080, token: str = None):
+def run_server(host: str = "127.0.0.1", port: int = 8080, token: str = None):
     """Start the intranet web server."""
     root_dir = (_find_workspace_root() / "intranet").resolve()
     if not root_dir.exists():
@@ -674,14 +674,24 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, token: str = None):
 
     cfg = _load_config(root_dir)
 
+    # Non-loopback binding requires auth + allowed_hosts
+    allowed_hosts_list = cfg.get("allowed_hosts", [])
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        missing = []
+        if not token:
+            missing.append("token auth (--token or INTRANET_TOKEN)")
+        if not allowed_hosts_list:
+            missing.append("allowed_hosts in config.json")
+        if missing:
+            raise SystemExit(f"[intranet] Binding to {host} requires: {' and '.join(missing)}")
+
     httpd = ThreadingHTTPServer((host, port), IntranetHandler)
     httpd.root_dir = root_dir
     httpd.auth_token = token
     httpd.session_secret = secrets.token_bytes(32)
 
     # Allowed hosts
-    hosts_list = cfg.get("allowed_hosts", [])
-    httpd.allowed_hosts = {h.lower() for h in hosts_list} if hosts_list else None
+    httpd.allowed_hosts = {h.lower() for h in allowed_hosts_list} if allowed_hosts_list else None
 
     # Plugins: prefix → resolved directory path (must be inside workspace or /tmp)
     raw_plugins = cfg.get("plugins", {})
@@ -709,7 +719,7 @@ def main() -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Serve local files over HTTP")
-    ap.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    ap.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     ap.add_argument("--port", type=int, default=8080, help="Port to bind to")
     ap.add_argument("--token", default=None, help="Bearer token for authentication")
     args = ap.parse_args()

@@ -16,7 +16,7 @@ Always `{workspace}/intranet/` (auto-detected from CWD or script location, not c
 
 | Setting | Default | Flag |
 |---|---|---|
-| Host | `0.0.0.0` | `--host` |
+| Host | `127.0.0.1` | `--host` |
 | Port | `8080` | `--port` |
 
 ### State Files
@@ -91,7 +91,7 @@ Restrict which hostnames the server responds to via `allowed_hosts` in `config.j
 
 Requests with a `Host` header not on the list receive `403 Forbidden` — before authentication is even checked.
 
-When `allowed_hosts` is omitted or empty, all hosts are accepted (suitable for LAN-only use).
+When `allowed_hosts` is omitted or empty, all hosts are accepted (only allowed on loopback). Binding to `0.0.0.0` requires both `token` and `allowed_hosts` to be configured.
 
 ## Persistent Config (`config.json`)
 

@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 2.1.1
+version: 2.2.0
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -27,7 +27,7 @@ See [SETUP.md](SETUP.md) for prerequisites and setup instructions.
 ```bash
 python3 {baseDir}/scripts/intranet.py start                          # Start on default port 8080
 python3 {baseDir}/scripts/intranet.py start --port 9000              # Custom port
-python3 {baseDir}/scripts/intranet.py start --host localhost          # Local-only (no LAN)
+python3 {baseDir}/scripts/intranet.py start --host 0.0.0.0            # LAN access (requires token + allowed_hosts)
 python3 {baseDir}/scripts/intranet.py start --token SECRET            # Enable bearer token auth
 python3 {baseDir}/scripts/intranet.py status                         # Check if running
 python3 {baseDir}/scripts/intranet.py stop                           # Stop server
@@ -68,7 +68,7 @@ Only files named `index.py` can execute as CGI:
 - **Host allowlist** — optional `allowed_hosts` restricts which `Host` headers are accepted
 - **Token auth** — optional bearer token via `--token` flag, `INTRANET_TOKEN` env var, or `config.json`. Browser clients visit `?token=SECRET` once → session cookie set → all subsequent navigation works. API clients use `Authorization: Bearer <token>` header.
 - **Path traversal protection** — all paths resolved and validated before serving
-- **Default bind: `0.0.0.0`** (all interfaces). Use `--host localhost` for local-only access.
+- **Default bind: `127.0.0.1`** (loopback only). LAN access via `--host 0.0.0.0` requires both token auth and `allowed_hosts` in config.json.
 
 ## Notes
 - PID file: `~/.intranet.pid`
