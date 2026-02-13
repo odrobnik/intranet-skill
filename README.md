@@ -55,6 +55,12 @@ ln -s ~/clawd/deliveries ~/clawd/intranet/deliveries
 - All symlinked content and `.py` files in the webroot are treated as trusted
 - 30-second timeout on CGI execution
 
+## Documentation
+
+- [SKILL.md](SKILL.md) — agent-facing reference (commands, behavior, limitations)
+- [SETUP.md](SETUP.md) — prerequisites, configuration, and setup instructions
+- [ClawHub](https://www.clawhub.com/skills/intranet) — install via ClawHub registry
+
 ## License
 
 MIT
