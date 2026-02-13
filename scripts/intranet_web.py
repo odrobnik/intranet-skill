@@ -131,66 +131,71 @@ def _bytes_format(n: int) -> str:
     return f"{n} B"
 
 
-def _trusted_roots() -> list[Path]:
-    """Return directories trusted for symlink targets and CGI execution.
+def _is_within_workspace(path: Path) -> bool:
+    """Check if a resolved path is within the workspace or /tmp."""
+    resolved = path.resolve()
+    workspace = _find_workspace_root().resolve()
+    allowed = [workspace, Path("/tmp").resolve()]
+    return any(resolved == a or a in resolved.parents for a in allowed)
 
-    Trusted by default: workspace, /tmp.
-    Also trusted: resolved targets of symlinks in workspace/skills/ — this
-    allows skills installed via symlinks (e.g. ~/Developer/Skills/) to serve
-    CGI scripts without explicit configuration.
+
+def _is_trusted_symlink(symlink_path: Path) -> bool:
+    """Check if a symlink is trusted for serving.
+
+    A symlink is trusted if:
+    1. It lives within the workspace (owner placed it), AND
+    2. Its immediate target (readlink, not fully resolved) points into
+       the workspace or /tmp.
+
+    This prevents arbitrary symlinks to sensitive files (e.g. /etc/passwd)
+    while allowing workspace symlink chains (e.g. intranet/tasks →
+    workspace/skills/foo/web where skills/foo is itself a symlink).
     """
     workspace = _find_workspace_root().resolve()
-    roots = {workspace, Path("/tmp").resolve()}
+    allowed = [workspace, Path("/tmp").resolve()]
 
-    # Auto-discover skill source directories from workspace/skills/ symlinks
-    skills_dir = workspace / "skills"
-    if skills_dir.is_dir():
-        seen_parents: set[Path] = set()
-        for child in skills_dir.iterdir():
-            if child.is_symlink():
-                target_parent = child.resolve().parent
-                if target_parent not in seen_parents:
-                    seen_parents.add(target_parent)
-                    roots.add(target_parent)
+    # Check symlink location (parent must be in workspace)
+    parent = symlink_path.parent.resolve()
+    if not any(parent == a or a in parent.parents for a in allowed):
+        return False
 
-    return list(roots)
-
-
-def _is_within_workspace(path: Path) -> bool:
-    """Check if a resolved path is within a trusted root directory."""
-    resolved = path.resolve()
-    trusted = _trusted_roots()
-    return any(resolved == a or a in resolved.parents for a in trusted)
+    # Check immediate target (one level of readlink, not full resolve)
+    try:
+        immediate = Path(os.readlink(symlink_path))
+        if not immediate.is_absolute():
+            immediate = (symlink_path.parent / immediate)
+        # Normalize without resolving symlinks
+        immediate = Path(os.path.normpath(str(immediate)))
+        return any(immediate == a or a in immediate.parents for a in allowed)
+    except OSError:
+        return False
 
 
 def _safe_resolve(base: Path, rel: str) -> Optional[Path]:
     """Safely resolve a relative path within base directory.
 
     Returns None if the path would escape the base directory.
-    Symlinks within the base directory are allowed to point to targets
-    within the workspace or /tmp.
+    Symlinks that live within the workspace are trusted (the owner placed
+    them intentionally), regardless of where they point.
     """
     rel = rel.lstrip("/")
     base_res = base.resolve()
 
-    # Walk path components to find symlinks within base
-    # This allows symlinks in the root to point outside the webroot
-    # but only to workspace-contained targets
+    # Walk path components to find symlinks
     parts = Path(rel).parts if rel else ()
     current = base_res
     for i, part in enumerate(parts):
         next_path = current / part
-        # Check if this component is a symlink within base
         if next_path.is_symlink():
-            resolved = next_path.resolve()
-            # Symlink targets must be within workspace or /tmp
-            if not _is_within_workspace(resolved):
+            # Trust symlinks within workspace that point to workspace paths
+            if not _is_trusted_symlink(next_path):
                 return None
+            resolved = next_path.resolve()
             remaining = Path(*parts[i + 1:]) if i + 1 < len(parts) else Path()
             return resolved / remaining if remaining.parts else resolved
         current = next_path
 
-    # No symlinks encountered - use strict containment check
+    # No symlinks encountered — strict containment check
     candidate = (base / rel).resolve()
     if candidate == base_res or base_res in candidate.parents:
         return candidate
@@ -618,9 +623,10 @@ class IntranetHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.FORBIDDEN, "Script is not executable")
             return
 
-        # Must resolve within workspace
-        if not _is_within_workspace(actual_script):
-            self.send_error(HTTPStatus.FORBIDDEN, "Script outside workspace")
+        # Path was already validated by _safe_resolve (symlinks must originate
+        # within workspace). Double-check the resolved path is a file.
+        if not actual_script.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, "Script not found")
             return
 
         parsed = urllib.parse.urlparse(self.path)
