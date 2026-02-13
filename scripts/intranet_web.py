@@ -123,25 +123,37 @@ def _bytes_format(n: int) -> str:
     return f"{n} B"
 
 
+def _is_within_workspace(path: Path) -> bool:
+    """Check if a resolved path is within the workspace or /tmp."""
+    resolved = path.resolve()
+    workspace = _find_workspace_root().resolve()
+    allowed = [workspace, Path("/tmp").resolve()]
+    return any(resolved == a or a in resolved.parents for a in allowed)
+
+
 def _safe_resolve(base: Path, rel: str) -> Optional[Path]:
     """Safely resolve a relative path within base directory.
 
     Returns None if the path would escape the base directory.
-    Symlinks within the base directory are allowed to point outside.
+    Symlinks within the base directory are allowed to point to targets
+    within the workspace or /tmp.
     """
     rel = rel.lstrip("/")
     base_res = base.resolve()
 
     # Walk path components to find symlinks within base
-    # This allows symlinks in the root to point outside
+    # This allows symlinks in the root to point outside the webroot
+    # but only to workspace-contained targets
     parts = Path(rel).parts if rel else ()
     current = base_res
     for i, part in enumerate(parts):
         next_path = current / part
         # Check if this component is a symlink within base
         if next_path.is_symlink():
-            # Symlink found within base - allow following it
             resolved = next_path.resolve()
+            # Symlink targets must be within workspace or /tmp
+            if not _is_within_workspace(resolved):
+                return None
             remaining = Path(*parts[i + 1:]) if i + 1 < len(parts) else Path()
             return resolved / remaining if remaining.parts else resolved
         current = next_path
@@ -445,9 +457,25 @@ class IntranetHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Error reading file: {e}")
 
     def _execute_python(self, script_path: Path, url_path: str):
-        """Execute a Python script (CGI-style) and return its output."""
+        """Execute a Python script (CGI-style) and return its output.
+
+        Security: only executes files that are (a) executable and (b) resolve
+        to a path within the workspace or /tmp.
+        """
         import subprocess
         import sys
+
+        actual_script = script_path.resolve()
+
+        # Must be executable
+        if not os.access(actual_script, os.X_OK):
+            self.send_error(HTTPStatus.FORBIDDEN, "Script is not executable")
+            return
+
+        # Must resolve within workspace
+        if not _is_within_workspace(actual_script):
+            self.send_error(HTTPStatus.FORBIDDEN, "Script outside workspace")
+            return
 
         parsed = urllib.parse.urlparse(self.path)
 
@@ -468,9 +496,6 @@ class IntranetHandler(BaseHTTPRequestHandler):
         })
 
         try:
-            # Resolve symlinks to get the actual script
-            actual_script = script_path.resolve()
-
             result = subprocess.run(
                 [sys.executable, str(actual_script)],
                 capture_output=True,
