@@ -9,14 +9,14 @@ Features:
 - CGI execution limited to index.py files only (webroot or plugin roots)
 - Token authentication with cookie-based sessions
 - Host allowlist for restricting access by hostname
-- Symlinks rejected at any path component (not served, not followed)
+- Symlinks followed; resolved targets must stay within their base directory
 
 Security model:
 - Only files named index.py can execute (must have +x bit)
 - All other .py files return 403 Forbidden
 - Plugins are explicitly registered in config.json (no auto-discovery)
 - Path traversal protection on all requests
-- Symlinks are rejected at any path component and skipped in listings
+- Symlinks followed with path containment (resolved target must stay in base directory)
 """
 
 import hashlib
