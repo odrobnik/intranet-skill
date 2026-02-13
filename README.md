@@ -1,34 +1,43 @@
 # Intranet Skill
 
-Lightweight local HTTP file server for `~/clawd/intranet` (or a custom root).
+An [OpenClaw](https://openclaw.ai) skill providing a lightweight local HTTP file server with plugin support.
 
-## Usage
+## Features
+
+- **Simple file serving** from a configurable root directory
+- **Plugin support** — other skills add content via symlinks
+- **CGI scripts** — executable `.py` files run as dynamic content
+- **Directory listing** with clean HTML interface
+- **PID management** — start/stop/status with process tracking
+- **Path traversal protection** built in
+
+## Requirements
+
+- Python 3 (no external packages)
+
+## Quick Start
+
 ```bash
-# Start
+# Start server
 python3 scripts/intranet.py start
 
-# Status
+# Check status
 python3 scripts/intranet.py status
 
-# Stop
+# Stop server
 python3 scripts/intranet.py stop
 ```
 
-## Options
-- `--host <host>` (default: 0.0.0.0)
-- `--port <port>` (default: 8080)
-- `--dir <path>` (default: ~/clawd/intranet)
+Default: `http://localhost:8080/`
 
-## Plugin support
-Other skills can add content via symlinks:
+## Plugin Example
+
 ```bash
-ln -s ~/banker ~/clawd/intranet/banker
-ln -s ~/my-docs ~/clawd/intranet/docs
+# Serve another skill's web dashboard
+ln -s ~/my-dashboard ~/clawd/intranet/dashboard
+# → http://localhost:8080/dashboard/
 ```
 
-Visit: `http://localhost:8080/`
+## License
 
-## Notes
-- PID stored at `~/.intranet.pid`
-- Config stored at `~/.intranet.conf`
-- See `SKILL.md` for agent usage guidance
+MIT
