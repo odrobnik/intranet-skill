@@ -130,19 +130,11 @@ def _safe_path(base: Path, rel: str) -> Optional[Path]:
     """Resolve a relative URL path within a base directory.
 
     Returns the resolved Path if it stays within base, None otherwise.
-    Symlinks are rejected at any path component (not just followed-and-checked).
+    Symlinks are allowed as long as the resolved target stays within base.
     """
     rel = rel.lstrip("/")
     base_res = base.resolve()
-
-    # Walk each component to reject symlinks
-    current = base
-    for part in Path(rel).parts:
-        current = current / part
-        if current.is_symlink():
-            return None
-
-    candidate = current.resolve()
+    candidate = (base / rel).resolve()
     if candidate == base_res or base_res in candidate.parents:
         return candidate
     return None
@@ -539,8 +531,8 @@ class IntranetHandler(BaseHTTPRequestHandler):
                     continue
                 if ignore_tokens and entry.name.lower() in ignore_tokens:
                     continue
-                # Skip symlinks entirely
-                if entry.is_symlink():
+                # Skip broken symlinks
+                if entry.is_symlink() and not entry.exists():
                     continue
                 # Skip .py files from listings (they're not servable)
                 if entry.is_file() and entry.suffix == ".py":
