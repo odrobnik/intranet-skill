@@ -9,7 +9,7 @@ Features:
 - CGI execution limited to index.py files only (webroot or plugin roots)
 - Token authentication with cookie-based sessions
 - Host allowlist for restricting access by hostname
-- No symlinks followed — all paths resolved and checked for containment
+- Symlinks skipped in directory listings; resolved paths checked for containment
 
 Security model:
 - Only files named index.py can execute (must have +x bit)
@@ -47,10 +47,6 @@ _CGI_TIMEOUT = 30
 
 def _find_workspace_root() -> Path:
     """Walk up from script location to find workspace root (parent of 'skills/')."""
-    env = os.environ.get("INTRANET_WORKSPACE")
-    if env:
-        return Path(env)
-
     # Prefer CWD if it looks like a workspace (handles symlinks correctly)
     cwd = Path.cwd()
     if (cwd / "skills").is_dir():
