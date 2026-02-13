@@ -30,25 +30,34 @@ The server serves files from a configurable root directory, created automaticall
 
 Created automatically on start, cleaned up on stop.
 
-## Plugin Integration
+## Plugins
 
-Symlink skill directories into the webroot:
+Register external directories as URL-mounted plugins in `config.json`:
 
-```bash
-ln -s {workspace}/deliveries {workspace}/intranet/deliveries
+```json
+{
+  "plugins": {
+    "banker": "/path/to/banker-data",
+    "deliveries": "/path/to/deliveries-data"
+  }
+}
 ```
+
+Each plugin is served at `http://host:port/<prefix>/`. If the plugin directory contains an executable `index.py`, it handles all sub-paths as CGI. Otherwise, files are served statically.
 
 ### Dynamic Pages
 
-Make any `.py` file executable in the webroot and it runs as a CGI script:
+Only files named `index.py` can execute — place one in any webroot subdirectory or plugin root:
 
 ```bash
 chmod +x {workspace}/intranet/my-dashboard/index.py
 ```
 
+All other `.py` files are blocked (403 Forbidden).
+
 ## Remote Access
 
-To expose the intranet outside your LAN, use any HTTP tunnel or reverse proxy (e.g. Cloudflare Tunnel, Tailscale Funnel, or similar). When exposing to the internet, **always enable token authentication** (see below).
+To expose the intranet outside your LAN, use any HTTP tunnel or reverse proxy (e.g. Cloudflare Tunnel, Tailscale Funnel, or similar). When exposing to the internet, **always enable token authentication and host allowlist**.
 
 ## Authentication
 
@@ -84,7 +93,7 @@ Restrict which hostnames the server responds to via `allowed_hosts` in `config.j
 }
 ```
 
-Requests with a `Host` header not on the list receive `403 Forbidden` — before authentication is even checked. This prevents direct IP access and unknown hostname probing.
+Requests with a `Host` header not on the list receive `403 Forbidden` — before authentication is even checked.
 
 When `allowed_hosts` is omitted or empty, all hosts are accepted (suitable for LAN-only use).
 
@@ -95,7 +104,10 @@ All settings can be stored in `{workspace}/intranet/config.json`:
 ```json
 {
   "token": "MY_SECRET_TOKEN",
-  "allowed_hosts": ["localhost", "my-machine.local"]
+  "allowed_hosts": ["localhost", "my-machine.local"],
+  "plugins": {
+    "myapp": "/path/to/myapp"
+  }
 }
 ```
 
@@ -103,3 +115,4 @@ All settings can be stored in `{workspace}/intranet/config.json`:
 |---|---|
 | `token` | Bearer token (fallback if no `--token` flag or env var) |
 | `allowed_hosts` | Hostnames the server responds to |
+| `plugins` | URL prefix → directory path mappings |
