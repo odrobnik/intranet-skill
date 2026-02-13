@@ -8,10 +8,9 @@ Apache and nginx require sudo, complex configuration, and are overkill for servi
 
 ## Features
 
-- **Static file serving** from a configurable root directory
-- **Dynamic Python pages** — executable `.py` files run as CGI scripts for dashboards, APIs, etc.
-- **Plugin support** — other skills add content via symlinks into the webroot
-- **Security** — path traversal protection, workspace-scoped CGI execution, executable permission required
+- **Static file serving** from a webroot directory
+- **Plugin support** — mount external directories at URL prefixes via `config.json`
+- **CGI execution** — `index.py` entry points run as CGI (off by default, opt-in via config)
 - **Directory listing** with clean HTML interface
 - **PID management** — start/stop/status with process tracking
 - **Bearer token auth** — optional authentication for remote/public access
@@ -24,11 +23,8 @@ Apache and nginx require sudo, complex configuration, and are overkill for servi
 ## Quick Start
 
 ```bash
-# Start server (accessible on LAN)
+# Start server (localhost only by default)
 python3 scripts/intranet.py start
-
-# Local-only (not accessible from LAN)
-python3 scripts/intranet.py start --host localhost
 
 # Check status
 python3 scripts/intranet.py status
@@ -39,20 +35,14 @@ python3 scripts/intranet.py stop
 
 Default: `http://localhost:8080/`
 
-## Plugin Example
-
-```bash
-# Serve another skill's web dashboard
-ln -s ~/clawd/deliveries ~/clawd/intranet/deliveries
-# → http://localhost:8080/deliveries/
-```
-
 ## Security Model
 
-- Symlinks in the webroot may point outside it, but only to targets within the workspace or `/tmp`
-- `.py` files are only executed if they have the executable bit set AND resolve within the workspace
-- The server binds to `0.0.0.0` by default (LAN accessible). Use `--host localhost` for local-only access
-- All symlinked content and `.py` files in the webroot are treated as trusted
+- **Path containment** — all resolved paths (including symlinks) must stay within their base directory
+- **CGI off by default** — enable via `"cgi": true` in config.json
+- **CGI restricted to `index.py`** — no arbitrary script execution
+- **Plugin CGI requires hash verification** — SHA-256 of `index.py` must match config
+- **Plugin directories must be inside workspace** — enforced at startup
+- **LAN binding requires auth** — binding to `0.0.0.0` requires both token and `allowed_hosts`
 - 30-second timeout on CGI execution
 
 ## Documentation
