@@ -2,14 +2,13 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 2.2.0
+version: 3.0.0
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
     emoji: "🌐"
     requires:
       bins: ["python3"]
-      env: ["INTRANET_TOKEN"]
 ---
 
 # Intranet
@@ -33,6 +32,18 @@ python3 {baseDir}/scripts/intranet.py status                         # Check if 
 python3 {baseDir}/scripts/intranet.py stop                           # Stop server
 ```
 
+## Directory Layout
+
+```
+{workspace}/intranet/
+├── config.json          # Server config (NOT served)
+└── www/                 # Webroot (served files go here)
+    ├── index.html
+    └── ...
+```
+
+Config lives in `{workspace}/intranet/config.json`, webroot is `{workspace}/intranet/www/`. The config file is never exposed to HTTP.
+
 ## Plugins
 
 Plugins mount external directories at URL prefixes. Configure in `config.json`:
@@ -47,12 +58,21 @@ Plugins mount external directories at URL prefixes. Configure in `config.json`:
 ```
 
 - `/banker/*` → served from the banker directory
-- If the plugin directory contains an `index.py`, it handles **all** sub-paths as CGI
-- If no `index.py`, files are served statically (with `index.html` as default)
+- Plugin paths must be inside the workspace
+- If CGI is enabled and the plugin directory contains an `index.py`, it handles **all** sub-paths as CGI
+- If no `index.py` (or CGI disabled), files are served statically (with `index.html` as default)
 
 ## CGI Execution
 
-Only files named `index.py` can execute as CGI:
+**Off by default.** Enable in `config.json`:
+
+```json
+{
+  "cgi": true
+}
+```
+
+When enabled, only files named `index.py` can execute as CGI:
 
 - **Webroot**: `index.py` in any subdirectory handles that directory's requests
 - **Plugins**: `index.py` at the plugin root handles all plugin sub-paths
@@ -61,17 +81,20 @@ Only files named `index.py` can execute as CGI:
 
 ## Security
 
+- **Webroot isolation** — config.json is outside the webroot (`www/`), never served
+- **CGI off by default** — must be explicitly enabled via `"cgi": true` in config.json
 - **Symlinks skipped** in directory listings; all resolved paths checked for strict containment within webroot/plugins
 - **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
 - **CGI restricted to `index.py`** — no arbitrary script execution
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)
 - **Host allowlist** — optional `allowed_hosts` restricts which `Host` headers are accepted
-- **Token auth** — optional bearer token via `--token` flag, `INTRANET_TOKEN` env var, or `config.json`. Browser clients visit `?token=SECRET` once → session cookie set → all subsequent navigation works. API clients use `Authorization: Bearer <token>` header.
+- **Token auth** — optional bearer token via `--token` flag or `config.json`. Browser clients visit `?token=SECRET` once → session cookie set → all subsequent navigation works. API clients use `Authorization: Bearer <token>` header.
 - **Path traversal protection** — all paths resolved and validated before serving
 - **Default bind: `127.0.0.1`** (loopback only). LAN access via `--host 0.0.0.0` requires both token auth and `allowed_hosts` in config.json.
 
 ## Notes
 - PID file: `~/.intranet.pid`
 - Config file: `~/.intranet.conf`
-- Root: always `{workspace}/intranet/` (auto-detected, not configurable)
-- 30-second timeout on CGI execution
+- Config dir: `{workspace}/intranet/` (auto-detected)
+- Webroot: `{workspace}/intranet/www/`
+- 30-second timeout on CGI execution (when enabled)

@@ -153,14 +153,14 @@ def cmd_start(args) -> int:
 
     host = args.host
     port = args.port
-    token = args.token or os.environ.get("INTRANET_TOKEN") or persistent_config.get("token") or None
+    token = args.token or persistent_config.get("token") or None
     allowed_hosts = persistent_config.get("allowed_hosts", [])
 
     # Non-loopback binding requires auth + allowed_hosts
     if host not in ("127.0.0.1", "localhost", "::1"):
         missing = []
         if not token:
-            missing.append("token auth (--token or INTRANET_TOKEN)")
+            missing.append("token auth (--token or token in config.json)")
         if not allowed_hosts:
             missing.append("allowed_hosts in config.json")
         if missing:
@@ -271,7 +271,7 @@ def main() -> int:
     start = sub.add_parser("start", help="Start the intranet server")
     start.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1; 0.0.0.0 requires token + allowed_hosts)")
     start.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
-    start.add_argument("--token", default=None, help="Bearer token for authentication (or INTRANET_TOKEN env var)")
+    start.add_argument("--token", default=None, help="Bearer token for authentication (or set in config.json)")
     start.set_defaults(func=cmd_start)
 
     # Status command

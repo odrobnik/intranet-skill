@@ -63,8 +63,13 @@ Enable bearer token authentication to restrict access:
 # Via CLI flag
 python3 scripts/intranet.py start --token MY_SECRET_TOKEN
 
-# Via environment variable
-INTRANET_TOKEN=MY_SECRET_TOKEN python3 scripts/intranet.py start
+# Or set in config.json (recommended)
+```
+
+```json
+{
+  "token": "MY_SECRET_TOKEN"
+}
 ```
 
 When a token is set, clients authenticate via:
@@ -109,6 +114,6 @@ All settings can be stored in `{workspace}/intranet/config.json`:
 
 | Key | Description |
 |---|---|
-| `token` | Bearer token (fallback if no `--token` flag or env var) |
+| `token` | Bearer token for authentication |
 | `allowed_hosts` | Hostnames the server responds to |
 | `plugins` | URL prefix → directory path mappings |

@@ -325,7 +325,8 @@ class IntranetHandler(BaseHTTPRequestHandler):
         For webroot: index.py in any directory handles that directory's requests.
         """
         # Plugin: always try plugin-root index.py first for any sub-path
-        if is_plugin:
+        cgi_enabled = getattr(self.server, "cgi_enabled", False)
+        if is_plugin and cgi_enabled:
             index_py = base_dir / "index.py"
             if index_py.is_file() and index_py.name == "index.py":
                 resolved = index_py.resolve()
@@ -352,11 +353,12 @@ class IntranetHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
 
-                # Try index.py (CGI) → index.html → directory listing
-                index_py = fs_path / "index.py"
-                if index_py.is_file() and index_py.name == "index.py":
-                    self._execute_cgi(index_py, url_path)
-                    return
+                # Try index.py (CGI, if enabled) → index.html → directory listing
+                if cgi_enabled:
+                    index_py = fs_path / "index.py"
+                    if index_py.is_file() and index_py.name == "index.py":
+                        self._execute_cgi(index_py, url_path)
+                        return
 
                 index_html = fs_path / "index.html"
                 if index_html.is_file():
@@ -668,45 +670,61 @@ def _load_config(root_dir: Path) -> dict:
 
 def run_server(host: str = "127.0.0.1", port: int = 8080, token: str = None):
     """Start the intranet web server."""
-    root_dir = (_find_workspace_root() / "intranet").resolve()
+    intranet_dir = (_find_workspace_root() / "intranet").resolve()
+    if not intranet_dir.exists():
+        intranet_dir.mkdir(parents=True, exist_ok=True)
+
+    # Config lives in workspace/intranet/config.json (not served)
+    cfg = _load_config(intranet_dir)
+
+    # Webroot is workspace/intranet/www/ (separate from config)
+    root_dir = intranet_dir / "www"
     if not root_dir.exists():
         root_dir.mkdir(parents=True, exist_ok=True)
 
-    cfg = _load_config(root_dir)
+    # Token: --token flag or config.json only (no env var)
+    token = token or cfg.get("token")
 
     # Non-loopback binding requires auth + allowed_hosts
     allowed_hosts_list = cfg.get("allowed_hosts", [])
     if host not in ("127.0.0.1", "localhost", "::1"):
         missing = []
         if not token:
-            missing.append("token auth (--token or INTRANET_TOKEN)")
+            missing.append("token auth (--token or config.json token)")
         if not allowed_hosts_list:
             missing.append("allowed_hosts in config.json")
         if missing:
             raise SystemExit(f"[intranet] Binding to {host} requires: {' and '.join(missing)}")
 
+    # CGI: off by default, enable via "cgi": true in config.json
+    cgi_enabled = cfg.get("cgi", False)
+
     httpd = ThreadingHTTPServer((host, port), IntranetHandler)
     httpd.root_dir = root_dir
     httpd.auth_token = token
     httpd.session_secret = secrets.token_bytes(32)
+    httpd.cgi_enabled = cgi_enabled
 
     # Allowed hosts
     httpd.allowed_hosts = {h.lower() for h in allowed_hosts_list} if allowed_hosts_list else None
 
-    # Plugins: prefix → resolved directory path (must be inside workspace or /tmp)
+    # Plugins: prefix → resolved directory path (must be inside workspace)
     raw_plugins = cfg.get("plugins", {})
     plugins: dict[str, Path] = {}
-    workspace_root = root_dir.parent  # root_dir is workspace/intranet
+    workspace_root = intranet_dir.parent  # intranet_dir is workspace/intranet
     allowed_roots = [workspace_root.resolve()]
     for prefix, dir_str in raw_plugins.items():
         p = Path(dir_str).expanduser().resolve()
         p_str = str(p)
         if not any(p_str.startswith(str(a) + "/") or p_str == str(a) for a in allowed_roots):
-            print(f"[intranet] WARNING: Skipping plugin '{prefix}' — path '{dir_str}' is outside workspace and /tmp")
+            print(f"[intranet] WARNING: Skipping plugin '{prefix}' — path '{dir_str}' is outside workspace")
             continue
         if p.is_dir():
             plugins[prefix.strip("/")] = p
     httpd.plugins = plugins
+
+    if cgi_enabled:
+        print("[intranet-web] CGI execution enabled")
 
     try:
         httpd.serve_forever()
@@ -724,13 +742,9 @@ def main() -> int:
     ap.add_argument("--token", default=None, help="Bearer token for authentication")
     args = ap.parse_args()
 
-    token = args.token or os.environ.get("INTRANET_TOKEN")
-
-    root_dir = (_find_workspace_root() / "intranet").resolve()
-    print(f"[intranet-web] Serving {root_dir} on http://{args.host}:{args.port}/")
-    if token:
-        print("[intranet-web] Token authentication enabled")
-    run_server(args.host, args.port, token=token)
+    intranet_dir = (_find_workspace_root() / "intranet").resolve()
+    print(f"[intranet-web] Serving {intranet_dir}/www on http://{args.host}:{args.port}/")
+    run_server(args.host, args.port, token=args.token)
     return 0
 
 
