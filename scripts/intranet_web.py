@@ -131,32 +131,36 @@ def _bytes_format(n: int) -> str:
     return f"{n} B"
 
 
-def _allowed_roots() -> list[Path]:
-    """Return the list of allowed root directories for symlink targets and CGI scripts."""
+def _trusted_roots() -> list[Path]:
+    """Return directories trusted for symlink targets and CGI execution.
+
+    Trusted by default: workspace, /tmp.
+    Also trusted: resolved targets of symlinks in workspace/skills/ — this
+    allows skills installed via symlinks (e.g. ~/Developer/Skills/) to serve
+    CGI scripts without explicit configuration.
+    """
     workspace = _find_workspace_root().resolve()
-    roots = [workspace, Path("/tmp").resolve()]
+    roots = {workspace, Path("/tmp").resolve()}
 
-    # Load extra allowed paths from config.json
-    config_file = workspace / "intranet" / "config.json"
-    if config_file.exists():
-        try:
-            import json
-            cfg = json.loads(config_file.read_text())
-            for p in cfg.get("allowed_paths", []):
-                expanded = Path(p).expanduser().resolve()
-                if expanded not in roots:
-                    roots.append(expanded)
-        except Exception:
-            pass
+    # Auto-discover skill source directories from workspace/skills/ symlinks
+    skills_dir = workspace / "skills"
+    if skills_dir.is_dir():
+        seen_parents: set[Path] = set()
+        for child in skills_dir.iterdir():
+            if child.is_symlink():
+                target_parent = child.resolve().parent
+                if target_parent not in seen_parents:
+                    seen_parents.add(target_parent)
+                    roots.add(target_parent)
 
-    return roots
+    return list(roots)
 
 
 def _is_within_workspace(path: Path) -> bool:
-    """Check if a resolved path is within an allowed root directory."""
+    """Check if a resolved path is within a trusted root directory."""
     resolved = path.resolve()
-    allowed = _allowed_roots()
-    return any(resolved == a or a in resolved.parents for a in allowed)
+    trusted = _trusted_roots()
+    return any(resolved == a or a in resolved.parents for a in trusted)
 
 
 def _safe_resolve(base: Path, rel: str) -> Optional[Path]:
@@ -621,14 +625,8 @@ class IntranetHandler(BaseHTTPRequestHandler):
 
         parsed = urllib.parse.urlparse(self.path)
 
-        # Build CGI environment
+        # Build CGI environment (inherits process env)
         env = os.environ.copy()
-
-        # Inject custom env vars from config.json
-        cgi_env = getattr(self.server, "cgi_env", {})
-        if cgi_env:
-            env.update(cgi_env)
-
         env.update({
             "REQUEST_METHOD": "GET",
             "SCRIPT_NAME": url_path,
@@ -821,18 +819,15 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None, t
     # Load settings from config.json
     import json as _json
     config_file = root_dir / "config.json"
-    cgi_env = {}
     allowed_hosts = None
     if config_file.exists():
         try:
             cfg = _json.loads(config_file.read_text())
-            cgi_env = cfg.get("env", {})
             hosts_list = cfg.get("allowed_hosts", [])
             if hosts_list:
                 allowed_hosts = {h.lower() for h in hosts_list}
         except Exception:
             pass
-    httpd.cgi_env = cgi_env
     httpd.allowed_hosts = allowed_hosts
 
     try:

@@ -95,11 +95,7 @@ All settings can be stored in `{workspace}/intranet/config.json`:
 ```json
 {
   "token": "MY_SECRET_TOKEN",
-  "allowed_hosts": ["localhost", "my-machine.local"],
-  "allowed_paths": ["~/extra/allowed/dir"],
-  "env": {
-    "MY_VAR": "value"
-  }
+  "allowed_hosts": ["localhost", "my-machine.local"]
 }
 ```
 
@@ -107,5 +103,3 @@ All settings can be stored in `{workspace}/intranet/config.json`:
 |---|---|
 | `token` | Bearer token (fallback if no `--token` flag or env var) |
 | `allowed_hosts` | Hostnames the server responds to |
-| `allowed_paths` | Extra directories allowed for symlink targets and CGI scripts (beyond workspace and `/tmp`) |
-| `env` | Extra environment variables injected into CGI scripts |
