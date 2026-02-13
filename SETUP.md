@@ -2,13 +2,13 @@
 
 ## Prerequisites
 
-- Python 3 (no additional packages required — uses built-in `http.server`)
+- Python 3 (no additional packages — uses built-in `http.server`)
 
 ## Configuration
 
 ### Root Directory
 
-The server serves files from a root directory, created automatically if it doesn't exist.
+The server serves files from a configurable root directory, created automatically if it doesn't exist.
 
 | Source | Value |
 |---|---|
@@ -32,10 +32,26 @@ Created automatically on start, cleaned up on stop.
 
 ## Plugin Integration
 
-Symlink directories into the webroot to serve content from other skills:
+Symlink skill directories into the webroot:
 
 ```bash
-ln -s /path/to/content {workspace}/intranet/my-plugin
+ln -s {workspace}/deliveries {workspace}/intranet/deliveries
 ```
 
-The server follows symlinks and supports executable `.py` CGI scripts.
+### Dynamic Pages
+
+Make any `.py` file executable in the webroot and it runs as a CGI script:
+
+```bash
+chmod +x {workspace}/intranet/my-dashboard/index.py
+```
+
+## Remote Access
+
+To expose the intranet outside your LAN, use [ngrok](https://ngrok.com):
+
+```bash
+ngrok http 8080
+# or with a fixed domain:
+ngrok http 8080 --url your-domain.ngrok-free.app
+```
