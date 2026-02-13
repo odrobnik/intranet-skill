@@ -666,11 +666,9 @@ def _load_config(root_dir: Path) -> dict:
         return {}
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None, token: str = None):
+def run_server(host: str = "0.0.0.0", port: int = 8080, token: str = None):
     """Start the intranet web server."""
-    if root_dir is None:
-        root_dir = _find_workspace_root() / "intranet"
-    root_dir = Path(root_dir).expanduser().resolve()
+    root_dir = (_find_workspace_root() / "intranet").resolve()
     if not root_dir.exists():
         root_dir.mkdir(parents=True, exist_ok=True)
 
@@ -689,7 +687,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None, t
     raw_plugins = cfg.get("plugins", {})
     plugins: dict[str, Path] = {}
     workspace_root = root_dir.parent  # root_dir is workspace/intranet
-    allowed_roots = [workspace_root.resolve(), Path("/tmp").resolve()]
+    allowed_roots = [workspace_root.resolve()]
     for prefix, dir_str in raw_plugins.items():
         p = Path(dir_str).expanduser().resolve()
         p_str = str(p)
@@ -713,17 +711,16 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Serve local files over HTTP")
     ap.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     ap.add_argument("--port", type=int, default=8080, help="Port to bind to")
-    ap.add_argument("--dir", default=None, help="Root directory to serve")
     ap.add_argument("--token", default=None, help="Bearer token for authentication")
     args = ap.parse_args()
 
-    root_dir = Path(args.dir) if args.dir else (_find_workspace_root() / "intranet")
     token = args.token or os.environ.get("INTRANET_TOKEN")
 
+    root_dir = (_find_workspace_root() / "intranet").resolve()
     print(f"[intranet-web] Serving {root_dir} on http://{args.host}:{args.port}/")
     if token:
         print("[intranet-web] Token authentication enabled")
-    run_server(args.host, args.port, root_dir, token=token)
+    run_server(args.host, args.port, token=token)
     return 0
 
 

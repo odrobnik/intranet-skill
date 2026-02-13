@@ -34,13 +34,8 @@ def _default_root_dir() -> Path:
     return _find_workspace_root() / "intranet"
 
 
-def _root_dir(dir_value: str | None) -> Path:
-    """Resolve the root directory from args, env, or default."""
-    if dir_value:
-        return Path(dir_value).expanduser().resolve()
-    env_dir = os.environ.get("INTRANET_DIR")
-    if env_dir:
-        return Path(env_dir).expanduser().resolve()
+def _root_dir() -> Path:
+    """Root directory is always workspace/intranet."""
     return _default_root_dir()
 
 
@@ -152,7 +147,7 @@ def cmd_start(args) -> int:
         return 0
 
     # Resolve directory
-    root_dir = _root_dir(args.dir)
+    root_dir = _root_dir()
     if not root_dir.exists():
         root_dir.mkdir(parents=True, exist_ok=True)
         print(f"[intranet] Created root directory: {root_dir}")
@@ -168,7 +163,6 @@ def cmd_start(args) -> int:
     config = {
         "host": host,
         "port": port,
-        "root_dir": str(root_dir),
     }
     if token:
         config["token"] = token
@@ -205,7 +199,7 @@ def cmd_start(args) -> int:
         spec.loader.exec_module(mod)
         run_server = getattr(mod, "run_server")
 
-    run_server(host=host, port=port, root_dir=root_dir, token=token)
+    run_server(host=host, port=port, token=token)
     return 0
 
 
@@ -268,7 +262,6 @@ def main() -> int:
     start = sub.add_parser("start", help="Start the intranet server")
     start.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
     start.add_argument("--port", type=int, default=8080, help="Port to bind to (default: 8080)")
-    start.add_argument("--dir", default=None, help="Root directory to serve (default: workspace/intranet)")
     start.add_argument("--token", default=None, help="Bearer token for authentication (or INTRANET_TOKEN env var)")
     start.set_defaults(func=cmd_start)
 

@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 2.0.3
+version: 2.1.0
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -26,7 +26,6 @@ See [SETUP.md](SETUP.md) for prerequisites and setup instructions.
 ```bash
 python3 {baseDir}/scripts/intranet.py start                          # Start on default port 8080
 python3 {baseDir}/scripts/intranet.py start --port 9000              # Custom port
-python3 {baseDir}/scripts/intranet.py start --dir /path/to/webroot   # Custom root directory
 python3 {baseDir}/scripts/intranet.py start --host localhost          # Local-only (no LAN)
 python3 {baseDir}/scripts/intranet.py start --token SECRET            # Enable bearer token auth
 python3 {baseDir}/scripts/intranet.py status                         # Check if running
@@ -62,7 +61,7 @@ Only files named `index.py` can execute as CGI:
 ## Security
 
 - **Symlinks skipped** in directory listings; all resolved paths checked for strict containment within webroot/plugins
-- **Plugin allowlist** — only directories explicitly registered in `config.json` are served
+- **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
 - **CGI restricted to `index.py`** — no arbitrary script execution
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)
 - **Host allowlist** — optional `allowed_hosts` restricts which `Host` headers are accepted
@@ -73,5 +72,5 @@ Only files named `index.py` can execute as CGI:
 ## Notes
 - PID file: `~/.intranet.pid`
 - Config file: `~/.intranet.conf`
-- Default root: `{workspace}/intranet/` (override with `--dir` or `INTRANET_DIR`)
+- Root: always `{workspace}/intranet/` (auto-detected, not configurable)
 - 30-second timeout on CGI execution

@@ -10,11 +10,7 @@
 
 The server serves files from a configurable root directory, created automatically if it doesn't exist.
 
-| Source | Value |
-|---|---|
-| Default | `{workspace}/intranet/` |
-| Env var | `INTRANET_DIR` |
-| CLI flag | `--dir <path>` |
+Always `{workspace}/intranet/` (auto-detected from CWD or script location, not configurable).
 
 ### Server Settings
 
