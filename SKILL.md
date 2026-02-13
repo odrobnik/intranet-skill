@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 3.0.2
+version: 3.1.0
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -57,10 +57,24 @@ Plugins mount external directories at URL prefixes. Configure in `config.json`:
 }
 ```
 
-- `/banker/*` → served from the banker directory
+Plugin config supports simple (static only) or extended (with CGI hash) format:
+
+```json
+{
+  "plugins": {
+    "static-only": "/path/to/dir",
+    "with-cgi": {
+      "dir": "/path/to/dir",
+      "hash": "sha256:abc123..."
+    }
+  }
+}
+```
+
 - Plugin paths must be inside the workspace
-- If CGI is enabled and the plugin directory contains an `index.py`, it handles **all** sub-paths as CGI
-- If no `index.py` (or CGI disabled), files are served statically (with `index.html` as default)
+- If CGI is enabled and a plugin has a `hash`, `index.py` at the plugin root handles all sub-paths — but only if its SHA-256 matches
+- Plugins without a `hash` are static-only (CGI blocked even when globally enabled)
+- Generate a hash: `shasum -a 256 /path/to/index.py`
 
 ## CGI Execution
 
@@ -85,7 +99,7 @@ When enabled, only files named `index.py` can execute as CGI:
 - **CGI off by default** — must be explicitly enabled via `"cgi": true` in config.json
 - **Symlinks rejected** — any symlink in the request path is blocked (403). Directory listings also skip symlinks. No symlinks are followed or served.
 - **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
-- **CGI restricted to `index.py`** — no arbitrary script execution
+- **CGI restricted to `index.py`** — no arbitrary script execution; plugin CGI requires SHA-256 hash in config.json
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)
 - **Host allowlist** — optional `allowed_hosts` restricts which `Host` headers are accepted
 - **Token auth** — optional bearer token via `--token` flag or `config.json`. Browser clients visit `?token=SECRET` once → session cookie set → all subsequent navigation works. API clients use `Authorization: Bearer <token>` header.

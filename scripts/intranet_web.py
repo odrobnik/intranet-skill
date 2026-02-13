@@ -320,13 +320,13 @@ class IntranetHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 sub_path = url_path[len(url_prefix):]  # includes leading /
-                self._serve_from_dir(plugin_dir, sub_path, url_path, is_plugin=True)
+                self._serve_from_dir(plugin_dir, sub_path, url_path, is_plugin=True, plugin_prefix=prefix)
                 return
 
         # Fall back to webroot
         self._serve_from_dir(self.server.root_dir, url_path, url_path, is_plugin=False)
 
-    def _serve_from_dir(self, base_dir: Path, rel_path: str, url_path: str, is_plugin: bool):
+    def _serve_from_dir(self, base_dir: Path, rel_path: str, url_path: str, is_plugin: bool, plugin_prefix: str = ""):
         """Serve a request from a directory (webroot or plugin).
 
         For plugins: index.py at the plugin root handles ALL sub-paths as CGI.
@@ -338,11 +338,12 @@ class IntranetHandler(BaseHTTPRequestHandler):
             index_py = base_dir / "index.py"
             if index_py.is_file() and index_py.name == "index.py":
                 resolved = index_py.resolve()
-                base_resolved = base_dir.resolve()
-                # index.py must resolve to within the plugin dir
-                if resolved.parent != base_resolved:
-                    self._send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+                # Verify hash (required for plugin CGI — proves content is trusted)
+                if not self._verify_cgi_hash(resolved, plugin_prefix):
+                    self._send_error(HTTPStatus.FORBIDDEN, "CGI hash mismatch")
                     return
+                # Hash match means the script content is approved,
+                # even if index.py is a symlink to the actual script
                 self._execute_cgi(index_py, url_path)
                 return
 
@@ -389,6 +390,28 @@ class IntranetHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     # CGI execution (index.py only)
     # ------------------------------------------------------------------
+
+    def _verify_cgi_hash(self, script_path: Path, plugin_prefix: str) -> bool:
+        """Verify a CGI script's SHA-256 hash against the configured hash.
+
+        If no hash is configured for this plugin, CGI is blocked (fail-closed).
+        For webroot CGI, use plugin_prefix="" (no hash required for webroot).
+        """
+        if not plugin_prefix:
+            return True  # Webroot CGI doesn't require hash (it's user's own files)
+
+        expected_hashes = getattr(self.server, "plugin_hashes", {})
+        expected = expected_hashes.get(plugin_prefix)
+        if not expected:
+            # No hash configured → block CGI for this plugin
+            print(f"[intranet] CGI blocked for plugin '{plugin_prefix}' — no hash in config.json")
+            return False
+
+        actual = hashlib.sha256(script_path.read_bytes()).hexdigest()
+        if actual != expected:
+            print(f"[intranet] CGI hash mismatch for plugin '{plugin_prefix}': expected {expected[:12]}..., got {actual[:12]}...")
+            return False
+        return True
 
     def _execute_cgi(self, script_path: Path, url_path: str):
         """Execute an index.py script as CGI."""
@@ -717,19 +740,33 @@ def run_server(host: str = "127.0.0.1", port: int = 8080, token: str = None):
     httpd.allowed_hosts = {h.lower() for h in allowed_hosts_list} if allowed_hosts_list else None
 
     # Plugins: prefix → resolved directory path (must be inside workspace)
+    # Supports both simple format ("prefix": "/path") and extended ("prefix": {"dir": "/path", "hash": "sha256:..."})
     raw_plugins = cfg.get("plugins", {})
     plugins: dict[str, Path] = {}
+    plugin_hashes: dict[str, str] = {}  # prefix → expected sha256 hex
     workspace_root = intranet_dir.parent  # intranet_dir is workspace/intranet
     allowed_roots = [workspace_root.resolve()]
-    for prefix, dir_str in raw_plugins.items():
+    for prefix, value in raw_plugins.items():
+        if isinstance(value, dict):
+            dir_str = value.get("dir", "")
+            raw_hash = value.get("hash", "")
+        else:
+            dir_str = value
+            raw_hash = ""
         p = Path(dir_str).expanduser().resolve()
         p_str = str(p)
         if not any(p_str.startswith(str(a) + "/") or p_str == str(a) for a in allowed_roots):
             print(f"[intranet] WARNING: Skipping plugin '{prefix}' — path '{dir_str}' is outside workspace")
             continue
+        clean_prefix = prefix.strip("/")
         if p.is_dir():
-            plugins[prefix.strip("/")] = p
+            plugins[clean_prefix] = p
+            if raw_hash:
+                # Accept "sha256:abc..." or plain "abc..."
+                h = raw_hash.removeprefix("sha256:").strip().lower()
+                plugin_hashes[clean_prefix] = h
     httpd.plugins = plugins
+    httpd.plugin_hashes = plugin_hashes
 
     if cgi_enabled:
         print("[intranet-web] CGI execution enabled")
