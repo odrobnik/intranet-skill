@@ -329,9 +329,11 @@ class IntranetHandler(BaseHTTPRequestHandler):
             index_py = base_dir / "index.py"
             if index_py.is_file() and index_py.name == "index.py":
                 resolved = index_py.resolve()
-                if base_dir.resolve() in resolved.parents or resolved == base_dir.resolve():
-                    pass  # containment OK
-                # For plugins, the index.py must be directly in the plugin dir
+                base_resolved = base_dir.resolve()
+                # index.py must resolve to within the plugin dir
+                if resolved.parent != base_resolved:
+                    self._send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+                    return
                 self._execute_cgi(index_py, url_path)
                 return
 
@@ -683,11 +685,17 @@ def run_server(host: str = "0.0.0.0", port: int = 8080, root_dir: Path = None, t
     hosts_list = cfg.get("allowed_hosts", [])
     httpd.allowed_hosts = {h.lower() for h in hosts_list} if hosts_list else None
 
-    # Plugins: prefix → resolved directory path
+    # Plugins: prefix → resolved directory path (must be inside workspace or /tmp)
     raw_plugins = cfg.get("plugins", {})
     plugins: dict[str, Path] = {}
+    workspace_root = root_dir.parent  # root_dir is workspace/intranet
+    allowed_roots = [workspace_root.resolve(), Path("/tmp").resolve()]
     for prefix, dir_str in raw_plugins.items():
         p = Path(dir_str).expanduser().resolve()
+        p_str = str(p)
+        if not any(p_str.startswith(str(a) + "/") or p_str == str(a) for a in allowed_roots):
+            print(f"[intranet] WARNING: Skipping plugin '{prefix}' — path '{dir_str}' is outside workspace and /tmp")
+            continue
         if p.is_dir():
             plugins[prefix.strip("/")] = p
     httpd.plugins = plugins
