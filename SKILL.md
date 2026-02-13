@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI. Symlinks skipped in directory listings."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 3.0.1
+version: 3.0.2
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -83,7 +83,7 @@ When enabled, only files named `index.py` can execute as CGI:
 
 - **Webroot isolation** — config.json is outside the webroot (`www/`), never served
 - **CGI off by default** — must be explicitly enabled via `"cgi": true` in config.json
-- **Symlinks skipped** in directory listings (not shown). Path resolution uses `resolve()` which follows symlinks, then enforces strict containment — a symlink pointing outside webroot/workspace is blocked.
+- **Symlinks rejected** — any symlink in the request path is blocked (403). Directory listings also skip symlinks. No symlinks are followed or served.
 - **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
 - **CGI restricted to `index.py`** — no arbitrary script execution
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)

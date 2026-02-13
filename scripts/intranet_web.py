@@ -9,14 +9,14 @@ Features:
 - CGI execution limited to index.py files only (webroot or plugin roots)
 - Token authentication with cookie-based sessions
 - Host allowlist for restricting access by hostname
-- Symlinks skipped in directory listings; resolved paths checked for containment
+- Symlinks rejected at any path component (not served, not followed)
 
 Security model:
 - Only files named index.py can execute (must have +x bit)
 - All other .py files return 403 Forbidden
 - Plugins are explicitly registered in config.json (no auto-discovery)
 - Path traversal protection on all requests
-- Symlinks are skipped in listings; resolve() follows them but enforces containment
+- Symlinks are rejected at any path component and skipped in listings
 """
 
 import hashlib
@@ -130,11 +130,19 @@ def _safe_path(base: Path, rel: str) -> Optional[Path]:
     """Resolve a relative URL path within a base directory.
 
     Returns the resolved Path if it stays within base, None otherwise.
-    Symlinks are followed by resolve() — the final path must be under base.
+    Symlinks are rejected at any path component (not just followed-and-checked).
     """
     rel = rel.lstrip("/")
     base_res = base.resolve()
-    candidate = (base / rel).resolve()
+
+    # Walk each component to reject symlinks
+    current = base
+    for part in Path(rel).parts:
+        current = current / part
+        if current.is_symlink():
+            return None
+
+    candidate = current.resolve()
     if candidate == base_res or base_res in candidate.parents:
         return candidate
     return None
