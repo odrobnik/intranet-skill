@@ -291,7 +291,13 @@ class IntranetHandler(BaseHTTPRequestHandler):
     # Request routing
     # ------------------------------------------------------------------
 
+    def do_HEAD(self):
+        self._head_request = True
+        self.do_GET()
+
     def do_GET(self):
+        if not hasattr(self, "_head_request"):
+            self._head_request = False
         if not self._check_host():
             return
         if not self._check_auth():
@@ -324,22 +330,9 @@ class IntranetHandler(BaseHTTPRequestHandler):
         For plugins: index.py at the plugin root handles ALL sub-paths as CGI.
         For webroot: index.py in any directory handles that directory's requests.
         """
-        # Plugin: always try plugin-root index.py first for any sub-path
         cgi_enabled = getattr(self.server, "cgi_enabled", False)
-        if is_plugin and cgi_enabled:
-            index_py = base_dir / "index.py"
-            if index_py.is_file() and index_py.name == "index.py":
-                resolved = index_py.resolve()
-                # Verify hash (required for plugin CGI — proves content is trusted)
-                if not self._verify_cgi_hash(resolved, plugin_prefix):
-                    self._send_error(HTTPStatus.FORBIDDEN, "CGI hash mismatch")
-                    return
-                # Hash match means the script content is approved,
-                # even if index.py is a symlink to the actual script
-                self._execute_cgi(index_py, url_path)
-                return
 
-        # Resolve the file path (strict containment)
+        # Resolve the file path (strict containment) — try static files first
         fs_path = _safe_path(base_dir, rel_path)
         if fs_path is None:
             self._send_error(HTTPStatus.FORBIDDEN, "Forbidden")
@@ -381,6 +374,17 @@ class IntranetHandler(BaseHTTPRequestHandler):
                     self._send_error(HTTPStatus.FORBIDDEN, "Forbidden")
                     return
                 self._serve_file(fs_path)
+                return
+
+        # Plugin CGI fallback: if no static file matched, try plugin-root index.py
+        if is_plugin and cgi_enabled:
+            index_py = base_dir / "index.py"
+            if index_py.is_file() and index_py.name == "index.py":
+                resolved = index_py.resolve()
+                if not self._verify_cgi_hash(resolved, plugin_prefix):
+                    self._send_error(HTTPStatus.FORBIDDEN, "CGI hash mismatch")
+                    return
+                self._execute_cgi(index_py, url_path)
                 return
 
         self._send_error(HTTPStatus.NOT_FOUND, "Not Found")
@@ -508,7 +512,8 @@ class IntranetHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            if not getattr(self, "_head_request", False):
+                self.wfile.write(data)
         except OSError as e:
             self._send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Error reading file: {e}")
 
