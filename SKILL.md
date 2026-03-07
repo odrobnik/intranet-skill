@@ -2,7 +2,7 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 3.2.5
+version: 3.2.6
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
@@ -51,8 +51,8 @@ Plugins mount external directories at URL prefixes. Configure in `config.json`:
 ```json
 {
   "plugins": {
-    "banker": "/path/to/banker",
-    "deliveries": "/path/to/deliveries"
+    "banker": "{workspace}/skills/banker/web",
+    "deliveries": "{workspace}/skills/deliveries/web"
   }
 }
 ```
@@ -99,12 +99,22 @@ When enabled, only files named `index.py` can execute as CGI:
 - **CGI off by default** — must be explicitly enabled via `"cgi": true` in config.json
 - **Path containment** — all resolved paths must stay within their base directory. Symlinks are followed but the resolved target is checked for containment.
 - **Plugin allowlist** — only directories explicitly registered in `config.json` are served; must be inside workspace
-- **CGI restricted to `index.py`** — no arbitrary script execution; plugin CGI requires SHA-256 hash in config.json
+- **CGI restricted to `index.py`** — no arbitrary script execution; plugin CGI requires SHA-256 hash in config.json. Webroot CGI does not require a hash (webroot files are under your direct control)
 - **All `.py` files blocked** except `index.py` entry points (not served as text, not executed)
 - **Host allowlist** — optional `allowed_hosts` restricts which `Host` headers are accepted
 - **Token auth** — optional bearer token via `--token` flag or `config.json`. Browser clients visit `?token=SECRET` once → session cookie set → all subsequent navigation works. API clients use `Authorization: Bearer <token>` header.
 - **Path traversal protection** — all paths resolved and validated before serving
 - **Default bind: `127.0.0.1`** (loopback only). LAN access via `--host 0.0.0.0` requires both token auth and `allowed_hosts` in config.json.
+
+## Workspace Detection
+
+The server auto-detects the workspace by walking up from `$PWD` (or the script location) looking for a `skills/` directory. The detected path is printed on startup so you can verify it.
+
+To skip autodiscovery, set `INTRANET_WORKSPACE` to the workspace root:
+
+```bash
+INTRANET_WORKSPACE=/path/to/workspace python3 scripts/intranet.py start
+```
 
 ## Notes
 - All state files are inside the workspace:

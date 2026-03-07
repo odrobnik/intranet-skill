@@ -11,7 +11,14 @@ from typing import Any
 
 
 def _find_workspace_root() -> Path:
-    """Walk up from script location to find workspace root (parent of 'skills/')."""
+    """Walk up from script location to find workspace root (parent of 'skills/').
+
+    If INTRANET_WORKSPACE is set, use it directly (no autodiscovery).
+    """
+    override = os.environ.get("INTRANET_WORKSPACE")
+    if override:
+        return Path(override)
+
     # Use $PWD (preserves symlinks) instead of Path.cwd() (resolves them).
     pwd_env = os.environ.get("PWD")
     cwd = Path(pwd_env) if pwd_env else Path.cwd()
@@ -183,6 +190,10 @@ def cmd_start(args) -> int:
     if token:
         config["token"] = token
     _write_config(config)
+
+    # Log detected workspace so operator can verify
+    workspace = _find_workspace_root()
+    print(f"[intranet] Workspace: {workspace}")
 
     # Fork to background
     pid = os.fork()

@@ -28,16 +28,18 @@ Created automatically on start, cleaned up on stop.
 
 ## Plugins
 
-Register external directories as URL-mounted plugins in `config.json`:
+Register workspace directories as URL-mounted plugins in `config.json`:
 
 ```json
 {
   "plugins": {
-    "banker": "/path/to/banker-data",
-    "deliveries": "/path/to/deliveries-data"
+    "banker": "{workspace}/skills/banker/web",
+    "deliveries": "{workspace}/skills/deliveries/web"
   }
 }
 ```
+
+**Plugin paths must resolve to a location inside the workspace.** Paths outside the workspace are rejected at startup with a warning.
 
 Each plugin is served at `http://host:port/<prefix>/`. If the plugin directory contains an executable `index.py`, it handles all sub-paths as CGI. Otherwise, files are served statically.
 
