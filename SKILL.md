@@ -2,11 +2,12 @@
 name: intranet
 description: "Lightweight local HTTP file server with plugin support. Serves static files from a webroot, mounts plugin directories at URL prefixes via config, and runs index.py entry points as CGI."
 summary: "Local HTTP file server with config-based plugins and CGI support."
-version: 3.2.6
+version: 3.2.7
 homepage: https://github.com/odrobnik/intranet-skill
 metadata:
   openclaw:
     emoji: "🌐"
+    acceptLicenseTerms: true
     requires:
       bins: ["python3"]
 ---

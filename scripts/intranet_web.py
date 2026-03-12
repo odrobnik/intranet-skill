@@ -236,8 +236,10 @@ class IntranetHandler(BaseHTTPRequestHandler):
         return False
 
     def _make_session_mac(self, token: str) -> str:
-        secret = getattr(self.server, "session_secret", b"")
-        return hmac.new(secret, token.encode(), hashlib.sha256).hexdigest()
+        # Deterministic MAC based on the token itself.
+        # This keeps cookies valid across server restarts, while ensuring
+        # they are immediately invalidated if the token is changed.
+        return hmac.new(token.encode("utf-8"), b"intranet_session_cookie_v1", hashlib.sha256).hexdigest()
 
     def _get_cookie(self, name: str) -> str | None:
         cookie_header = self.headers.get("Cookie", "")
@@ -753,7 +755,6 @@ def run_server(host: str = "127.0.0.1", port: int = 8080, token: str = None):
     httpd = ThreadingHTTPServer((host, port), IntranetHandler)
     httpd.root_dir = root_dir
     httpd.auth_token = token
-    httpd.session_secret = secrets.token_bytes(32)
     httpd.cgi_enabled = cgi_enabled
 
     # Allowed hosts
